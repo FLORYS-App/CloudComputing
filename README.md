@@ -24,7 +24,4 @@ The Cloud Computing team is dedicated to:
 The Cloud Computing team works with a variety of tools and platforms to build and manage cloud infrastructure:
 
 - **Cloud Providers**: Google Cloud Platform (GCP)
-- **Infrastructure as Code (IaC)**: Terraform, Ansible, CloudFormation
-- **Containerization**: Docker, Kubernetes
-- **CI/CD**: Jenkins, GitHub Actions
-- **Monitoring & Logging**: Prometheus, Grafana, ELK Stack
+- **Containerization**: Docker
