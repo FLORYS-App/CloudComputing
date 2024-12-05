@@ -1,83 +1,143 @@
 const express = require('express');
-const admin = require('firebase-admin');
 const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const multer = require('multer');
 const axios = require('axios');
+const { nanoid } = require('nanoid');
+const mysql = require('mysql2/promise');
 const { Storage } = require('@google-cloud/storage');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const upload = multer({
+    storage: multer.memoryStorage(),
+});
+
 app.use(cors());
 app.use(bodyParser.json());
 
-admin.initializeApp({
-    credential: admin.credential.cert(require('./serviceAccountKey.json')),
-    storageBucket: 'https://console.cloud.google.com/storage/browser/florysbucket'
-});
+const GOOGLE_APPLICATION_CREDENTIALS = `${yourcredentialserviceaccountkeypath}`; 
+const GCS_BUCKET_NAME = 'florysbucket'; 
 
-const db = admin.firestore();
-const bucket = admin.storage().bucket();
+const storage = new Storage({
+    keyFilename: GOOGLE_APPLICATION_CREDENTIALS,
+});
+const bucket = storage.bucket(GCS_BUCKET_NAME);
+
+const dbConfig = {
+    host: '34.101.41.22',
+    user: 'root',
+    password: '1',
+    database: 'florys',
+};
 
 app.post('/register', async (req, res) => {
     const { username, email, password, confirmPassword } = req.body;
 
-    if (!/^[a-zA-Z0-9]{3,}$/.test(username)) {
-        return res.status(400).json({ message: 'Username salah' });
+    // Validate input
+    if (!username || !email || !password || !confirmPassword) {
+        return res.status(400).json({ message: 'Semua field diperlukan' });
     }
-    if (!/\S+@\S+\.\S+/.test(email)) {
-        return res.status(400).json({ message: 'Email tidak valid' });
-    }
-    if (password.length < 8 || !/(?=.*[0-9])(?=.*[a-zA-Z])/.test(password)) {
-        return res.status(400).json({ message: 'Password harus minimal 8 karakter' });
-    }
+
     if (password !== confirmPassword) {
-        return res.status(400).json({ message: 'Password tidak sesuai.' });
+        return res.status(400).json({ message: 'Password tidak cocok' });
     }
 
-    const userSnapshot = await db.collection('users').where('username', '==', username).get();
-    if (!userSnapshot.empty) {
-        return res.status(400).json({ message: 'Username sudah terdaftar' });
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const [rows] = await connection.execute('SELECT * FROM users WHERE username = ? OR email = ?', [username, email]);
+        if (rows.length > 0) {
+            return res.status(400).json({ message: 'Username atau email sudah terdaftar' });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        await connection.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)', [username, email, hashedPassword]);
+        res.status(201).json({ message: 'Registrasi berhasil silahkan login' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Terjadi kesalahan saat registrasi' });
+    } finally {
+        await connection.end();
     }
-
-    const emailSnapshot = await db.collection('users').where('email', '==', email).get();
-    if (!emailSnapshot.empty) {
-        return res.status(400).json({ message: 'Email sudah terdaftar' });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    await db.collection('users').add({
-        username,
-        email,
-        password: hashedPassword
-    });
-
-    res.status(201).json({ message: 'Registrasi berhasil silahkan login' });
 });
 
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
 
-    const userSnapshot = await db.collection('users').where('email', '==', email).get();
-    if (userSnapshot.empty) {
-        return res.status(401).json({ message: 'Email atau password salah' });
+    // Validate input
+    if (!email || !password) {
+        return res.status(400).json({ message: 'Email dan password diperlukan' });
     }
 
-    const user = userSnapshot.docs[0].data();
-    const isMatch = await bcrypt.compare(password, user.password);
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const [rows] = await connection.execute('SELECT * FROM users WHERE email = ?', [email]);
+        if (rows.length === 0) {
+            return res.status(401).json({ message: 'Email atau password salah' });
+        }
 
-    if (!isMatch) {
-        return res.status(401).json({ message: 'email atau password salah' });
+        const user = rows[0];
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(401).json({ message: 'Email atau password salah' });
+        }
+
+        res.status(200).json({ message: 'Login berhasil' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Terjadi kesalahan saat login' });
+    } finally {
+        await connection.end();
     }
-    res.status(200 ).json({ message: 'Login berhasil' });
 });
 
-const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 5 * 1024 * 1024 }
+app.post('/checkin', async (req, res) => {
+    const { username } = req.body;
+
+    // Validate input
+    if (!username) {
+        return res.status(400).json({ message: 'Username diperlukan' });
+    }
+
+    const checkInId = `${new Date().toISOString().slice(0, 10)}-${nanoid()}`;
+    const checkInDate = new Date();
+
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const [userRows] = await connection.execute('SELECT * FROM users WHERE username = ?', [ username]);
+        if (userRows.length === 0) {
+            return res.status(400).json({ message: 'Username tidak terdaftar' });
+        }
+
+        await connection.execute('INSERT INTO check_ins (check_in_id, username, check_in_date) VALUES (?, ?, ?)', [checkInId, username, checkInDate]);
+        res.status(201).json({ message: 'Check-in berhasil', checkInId });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Terjadi kesalahan saat check-in' });
+    } finally {
+        await connection.end();
+    }
+});
+
+app.get('/checkin/:username', async (req, res) => {
+    const { username } = req.params;
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const [userRows] = await connection.execute('SELECT * FROM users WHERE username = ?', [username]);
+        if (userRows.length === 0) {
+            return res.status(400).json({ message: 'Username tidak terdaftar' });
+        }
+
+        const [rows] = await connection.execute('SELECT COUNT(*) AS checkInCount FROM check_ins WHERE username = ?', [username]);
+        res.status(200).json({ username, checkInCount: rows[0].checkInCount });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Terjadi kesalahan saat mengambil data check-in' });
+    } finally {
+        await connection.end();
+    }
 });
 
 app.post('/upload', upload.single('image'), async (req, res) => {
@@ -110,7 +170,7 @@ app.get('/files', async (req, res) => {
         const [files] = await bucket.getFiles();
         const fileList = files.map(file => ({
             name: file.name,
-            publicUrl: `https://storage.googleapis.com/${bucket.name}/${file.name}`
+            publicUrl: `https://console.cloud.google.com/storage/browser/${bucket.name}/${file.name}`
         }));
         res.status(200).json(fileList);
     } catch (error) {
@@ -137,7 +197,7 @@ app.get('/files/:filename', async (req, res) => {
 
 app.get('/weather', async (req, res) => {
     const city = req.query.city;
-    const url = `https://api.openweathermap.org/data/2.5/weather?q=${city}&units=metric&appid=4aadf05227ff55a7fc02e0070de2a73f`;
+    const url = `https://api.openweathermap.org/data/2.5/weather?q=${city}&units=metric&appid=${api_key_from_openweatherapi}`;
 
     try {
         const response = await axios.get(url);
@@ -155,7 +215,7 @@ app.get('/weather', async (req, res) => {
         };
         res.json(weatherInfo);
     } catch (error) {
-        res.status(500).json({ message: 'Terjadi kesalahan'});
+        res.status(500).json({ message: 'Terjadi kesalahan' });
     }
 });
 
