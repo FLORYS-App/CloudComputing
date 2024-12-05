@@ -36,7 +36,6 @@ const dbConfig = {
 app.post('/register', async (req, res) => {
     const { username, email, password, confirmPassword } = req.body;
 
-    // Validate input
     if (!username || !email || !password || !confirmPassword) {
         return res.status(400).json({ message: 'Semua field diperlukan' });
     }
@@ -66,7 +65,6 @@ app.post('/register', async (req, res) => {
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
 
-    // Validate input
     if (!email || !password) {
         return res.status(400).json({ message: 'Email dan password diperlukan' });
     }
