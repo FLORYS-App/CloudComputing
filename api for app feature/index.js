@@ -19,7 +19,7 @@ app.use(cors());
 app.use(bodyParser.json());
 
 const GOOGLE_APPLICATION_CREDENTIALS = `${yourcredentialserviceaccountkeypath}`; 
-const GCS_BUCKET_NAME = 'florysbucket'; 
+const GCS_BUCKET_NAME = '${yourbucketname}''; 
 
 const storage = new Storage({
     keyFilename: GOOGLE_APPLICATION_CREDENTIALS,
@@ -27,10 +27,10 @@ const storage = new Storage({
 const bucket = storage.bucket(GCS_BUCKET_NAME);
 
 const dbConfig = {
-    host: '34.101.41.22',
-    user: 'root',
-    password: '1',
-    database: 'florys',
+    host: '${yourdbhost}',
+    user: '${yourdbuser}'',
+    password: '${yourdpassuser}'',
+    database: '${yourdb}'',
 };
 
 app.post('/register', async (req, res) => {
