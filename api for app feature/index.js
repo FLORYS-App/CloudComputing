@@ -94,7 +94,6 @@ app.post('/login', async (req, res) => {
 app.post('/checkin', async (req, res) => {
     const { username } = req.body;
 
-    // Validate input
     if (!username) {
         return res.status(400).json({ message: 'Username diperlukan' });
     }
